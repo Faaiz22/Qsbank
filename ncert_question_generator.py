@@ -1,5 +1,4 @@
 import streamlit as st
-import PyPDF2
 import io
 import re
 import random
@@ -11,10 +10,32 @@ from nltk.tag import pos_tag
 from nltk.chunk import ne_chunk
 from nltk.tree import Tree
 from collections import Counter, defaultdict
-import spacy
 from datetime import datetime
 import json
 import pandas as pd
+
+# Try to import PDF libraries with fallbacks
+PDF_LIBRARY = None
+try:
+    import PyPDF2
+    PDF_LIBRARY = "PyPDF2"
+except ImportError:
+    try:
+        import pdfplumber
+        PDF_LIBRARY = "pdfplumber"
+    except ImportError:
+        try:
+            from pdfminer.high_level import extract_text
+            PDF_LIBRARY = "pdfminer"
+        except ImportError:
+            PDF_LIBRARY = None
+
+# Try to import spaCy with fallback
+try:
+    import spacy
+    SPACY_AVAILABLE = True
+except ImportError:
+    SPACY_AVAILABLE = False
 
 # Download required NLTK data
 @st.cache_resource
@@ -35,6 +56,8 @@ def download_nltk_data():
 # Load spaCy model (fallback to basic processing if not available)
 @st.cache_resource
 def load_nlp_model():
+    if not SPACY_AVAILABLE:
+        return None
     try:
         import spacy
         return spacy.load("en_core_web_sm")
@@ -98,18 +121,41 @@ class AdvancedNCERTQuestionGenerator:
         }
     
     def extract_text_from_pdf(self, pdf_file) -> str:
-        """Extract text content from uploaded PDF file"""
+        """Extract text content from uploaded PDF file using available libraries"""
+        if PDF_LIBRARY is None:
+            st.error("❌ No PDF processing library available. Please install one of: PyPDF2, pdfplumber, or pdfminer3")
+            st.code("pip install PyPDF2")
+            return ""
+        
         try:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            text = ""
+            if PDF_LIBRARY == "PyPDF2":
+                import PyPDF2
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                text = ""
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text + "\n"
+                return text
             
-            for page_num in range(len(pdf_reader.pages)):
-                page = pdf_reader.pages[page_num]
-                page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
+            elif PDF_LIBRARY == "pdfplumber":
+                import pdfplumber
+                text = ""
+                with pdfplumber.open(pdf_file) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                return text
             
-            return text
+            elif PDF_LIBRARY == "pdfminer":
+                from pdfminer.high_level import extract_text
+                # Reset file pointer
+                pdf_file.seek(0)
+                text = extract_text(pdf_file)
+                return text
+            
         except Exception as e:
             st.error(f"Error extracting text from PDF: {str(e)}")
             return ""
@@ -455,6 +501,30 @@ def main():
     
     st.title("🎓 Advanced NCERT Question Generator")
     st.markdown("**Generate high-quality, accurate questions from NCERT PDFs using advanced NLP techniques**")
+    
+    # Check for required libraries
+    if PDF_LIBRARY is None:
+        st.error("❌ **PDF Processing Library Missing**")
+        st.markdown("""
+        No PDF processing library is available. Please install one of the following:
+        
+        ```bash
+        pip install PyPDF2
+        ```
+        **OR**
+        ```bash
+        pip install pdfplumber
+        ```
+        **OR**
+        ```bash
+        pip install pdfminer3
+        ```
+        
+        Then restart the application.
+        """)
+        st.stop()
+    else:
+        st.success(f"✅ Using {PDF_LIBRARY} for PDF processing")
     
     # Initialize the question generator
     if 'generator' not in st.session_state:
