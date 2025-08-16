@@ -1,5 +1,7 @@
 streamlit
 PyPDF2
+pdfplumber
+pdfminer3
 nltk
 pandas
 openpyxl
